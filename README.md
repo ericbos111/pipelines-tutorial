@@ -16,14 +16,6 @@ OpenShift Pipelines features:
 
 This tutorial walks you through pipeline concepts and how to create and run a simple pipeline for building and deploying a containerized app on OpenShift, and in this tutorial, we will use `Triggers` to handle a real GitHub webhook request to kickoff a PipelineRun.
 
-In this tutorial you will:
-* [Learn about Tekton concepts](#concepts)
-* [Install OpenShift Pipelines](#install-openshift-pipelines)
-* [Deploy a Sample Application](#deploy-sample-application)
-* [Install Tasks](#install-tasks)
-* [Create a Pipeline](#create-pipeline)
-* [Trigger a Pipeline](#trigger-pipeline)
-
 ## Prerequisites
 
 You need an OpenShift 4 cluster in order to complete this tutorial. If you don't have an existing cluster, go to http://try.openshift.com and register for free in order to get an OpenShift 4 cluster up and running on AWS within minutes.
@@ -81,115 +73,62 @@ You can learn more about `triggers` by checking out the [docs](https://github.co
 
 In the following sections, you will go through each of the above steps to define and invoke a pipeline.
 
-## Install OpenShift Pipelines
+## Getting started with Tekton Pipelines, also known as Red Hat OpenShift Pipelines, for people that have never used it before.
+This is what the pipeline does:
+1.	Fetch the repository
+2.	Build the image
+3.	Apply the manifests for creating a deployment, a service and a route
+4.	Deploy the image
 
-OpenShift Pipelines is provided as an add-on on top of OpenShift that can be installed via an operator available in the OpenShift OperatorHub. Follow [these instructions](install-operator.md) in order to install OpenShift Pipelines on OpenShift via the OperatorHub.
+## 1. Deploy pipelines Operator (once per cluster) from the Operator Hub
+
+OpenShift Pipelines is provided as an add-on on top of OpenShift that can be installed via an operator available in the OpenShift OperatorHub. 
+
+* Follow [these instructions](install-operator.md) in order to install OpenShift Pipelines on OpenShift via the OperatorHub.
 
 ![OpenShift OperatorHub](docs/images/operatorhub.png)
 
-## Deploy Sample Application
+* Create your own namespace.
+* In order to get familiar with OpenShift Pipelines concepts and create your first pipeline, follow the OpenShift Pipelines Docs but use your own namespace. You can skip the mirroring part.
 
-Create a project for the sample application that you will be using in this tutorial:
+### 1.1 Create pipeline tasks 
 
-```bash
-$ oc new-project pipelines-tutorial
+#### Procedure
+
+Install the apply-manifests and update-deployment task resources from the pipelines-tutorial repository, which contains a list of reusable tasks for pipelines:
 ```
-
-OpenShift Pipelines automatically adds and configures a `ServiceAccount` named `pipeline` that has sufficient permissions to build and push an image. This
-service account will be used later in the tutorial.
-
-Run the following command to see the `pipeline` service account:
-
-```bash
-$ oc get serviceaccount pipeline
+ oc create -f https://raw.githubusercontent.com/openshift/pipelines-tutorial/pipelines-1.18/01_pipeline/01_apply_manifest_task.yaml
+ oc create -f https://raw.githubusercontent.com/openshift/pipelines-tutorial/pipelines-1.18/01_pipeline/02_update_deployment_task.yaml
 ```
-
-You will use the simple application during this tutorial, which has a [frontend](https://github.com/openshift/pipelines-vote-ui) and [backend](https://github.com/openshift/pipelines-vote-api)
-
-You can also deploy the same applications by applying the artifacts available in k8s directory of the respective repo
-
-If you deploy the application directly, you should be able to see the deployment in the OpenShift Web Console by switching over to the **Developer** perspective of the OpenShift Web Console. Change from **Administrator** to **Developer** from the drop down as shown below:
-
-![Developer Perspective](docs/images/developer.png)
-
-Make sure you are on the `pipelines-tutorial` project by selecting it from the **Project** dropdown menu. Either search for `pipelines-tutorial` in the search bar or scroll down until you find `pipelines-tutorial` and click on the name of your project.
-
-![Projects](docs/images/projects.png)
-
-<!--
-On the **Topology** view of the **Developer** perspective, you will be able to see the resources you just created.
-
-![Projects](docs/images/application-deployed.png)
--->
-
-## Install Tasks
-
-Tasks consist of a number of steps that are executed sequentially. Tasks are executed/run by creating TaskRuns. A TaskRun will schedule a Pod. Each step is executed in a separate container within the same pod. They can also have inputs and outputs in order to interact with other tasks in the pipeline.
-
-Here is an example of a Maven task for building a Maven-based Java application:
-
-```yaml
-apiVersion: tekton.dev/v1
-kind: Task
-metadata:
-  name: maven-build
-spec:
-  workspaces:
-   - name: filedrop
-  steps:
-  - name: build
-    image: maven:3.6.0-jdk-8-slim
-    command:
-    - /usr/bin/mvn
-    args:
-    - install
+Use the tkn task list command to list the tasks you created:
 ```
-
-When a task starts running, it starts a pod and runs each step sequentially in a separate container on the same pod. This task happens to have a single step, but tasks can have multiple steps, and, since they run within the same pod, they have access to the same volumes in order to cache files, access configmaps, secrets, etc. You can specify volume using workspace. It is recommended that Tasks uses at most one writeable Workspace. Workspace can be secret, pvc, config or emptyDir.
-
-Note that only the requirement for a git repository is declared on the task and not a specific git repository to be used. That allows tasks to be reusable for multiple pipelines and purposes. You can find more examples of reusable tasks in the [Tekton Catalog](https://github.com/tektoncd/catalog) and [OpenShift Catalog](https://github.com/openshift/pipelines-catalog) repositories.
-
-Install the `apply-manifests` and `update-deployment` tasks from the repository using `oc` or `kubectl`, which you will need for creating a pipeline in the next section:
-
-```bash
-$ oc create -f https://raw.githubusercontent.com/openshift/pipelines-tutorial/master/01_pipeline/01_apply_manifest_task.yaml
-
-$ oc create -f https://raw.githubusercontent.com/openshift/pipelines-tutorial/master/01_pipeline/02_update_deployment_task.yaml
+ tkn task list
 ```
-
-You can take a look at the tasks you created using the [Tekton CLI](https://github.com/tektoncd/cli/releases):
-
+The output verifies that the apply-manifests and update-deployment task resources were created:
 ```
-$ tkn task ls
-
-NAME                AGE
-apply-manifests     10 seconds ago
-update-deployment   4 seconds ago
+NAME                DESCRIPTION   AGE
+apply-manifests                   1 minute ago
+update-deployment                 48 seconds ago
 ```
+### 1.2. Assemble a pipeline 
 
-We will be using `buildah` task, which gets installed along with Operator. Operator installs few tasks in namespace `openshift-pipelines` which you can see.
+A pipeline represents a CI/CD flow and is defined by the tasks to be executed. It is designed to be generic and reusable in multiple applications and environments.
 
-```bash
-$ tkn tasks ls -n openshift-pipelines
-NAME                      DESCRIPTION              AGE
-buildah                   Buildah task builds...   1 day ago
-git-cli                   This task can be us...   1 day ago
-git-clone                 This object represe...   1 day ago
-maven                     This Task can be us...   1 day ago
-...
+A pipeline specifies how the tasks interact with each other and their order of execution using the from and runAfter parameters. It uses the workspaces field to specify one or more volumes that each task in the pipeline requires during execution.
+
+In this section, you will create a pipeline that takes the source code of the application from GitHub, and then builds and deploys it on OpenShift Container Platform.
+
+The pipeline performs the following tasks for the application 
+
+Clones the source code of the application from the Git repository by referring to the git-url and git-revision parameters.
+Builds the container image using the buildah task provided in the openshift-pipelines namespace.
+Pushes the image to the OpenShift image registry by referring to the image parameter.
+Deploys the new image on OpenShift Container Platform by using the apply-manifests and update-deployment tasks.
+
+#### Procedure
+
+Copy the contents of the following sample pipeline YAML file and save it:
 ```
-
-## Create Pipeline
-
-A pipeline defines a number of tasks that should be executed and how they interact with each other via their inputs and outputs.
-
-In this tutorial, you will create a pipeline that takes the source code of the application from GitHub and then builds and deploys it on OpenShift.
-
-![Pipeline Diagram](docs/images/pipeline-diagram.png)
-
-Here is the YAML file that represents the above pipeline:
-
-```yaml
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
@@ -207,10 +146,10 @@ spec:
   - name: git-revision
     type: string
     description: revision to be used from repo of the code for deployment
-    default: master
+    default: "main"
   - name: IMAGE
     type: string
-    description: image to be build from the code
+    description: image to be built from the code
   tasks:
   - name: fetch-repository
     taskRef:
@@ -244,12 +183,12 @@ spec:
         value: buildah
       - name: namespace
         value: openshift-pipelines
-    params:
-    - name: IMAGE
-      value: $(params.IMAGE)
     workspaces:
     - name: source
       workspace: shared-workspace
+    params:
+    - name: IMAGE
+      value: $(params.IMAGE)
     runAfter:
     - fetch-repository
   - name: apply-manifests
@@ -271,400 +210,65 @@ spec:
     runAfter:
     - apply-manifests
 ```
-Once you deploy the pipelines, you should be able to visualize pipeline flow in the OpenShift Web Console by switching over to the **Developer** perspective of the OpenShift Web Console. Select pipeline tab, select project as `pipelines-tutorial` and click on pipeline `build-and-deploy`
+The pipeline definition abstracts away the specifics of the Git source repository and image registries. These details are added as params when a pipeline is triggered and executed.
 
-![Pipeline-view](docs/images/pipeline-view.png)
-
-This pipeline helps you to build and deploy backend/frontend, by configuring right resources to pipeline.
-
-Pipeline Steps:
-
-  1. Clones the source code of the application from a git repository by referring (`git-url` and `git-revision` param)
-  2. Builds the container image of application using the `buildah` task
-  that uses [Buildah](https://buildah.io/) to build the image
-  3. The application image is pushed to an image registry by refering (`image` param)
-  4. The new application image is deployed on OpenShift using the `apply-manifests` and `update-deployment` tasks.
-
-You might have noticed that there are no references to the git
-repository or the image registry it will be pushed to in pipeline. That's because pipeline in Tekton
-are designed to be generic and re-usable across environments and stages through
-the application's lifecycle. Pipelines abstract away the specifics of the git
-source repository and image to be produced as `PipelineResources` or `Params`. When triggering a
-pipeline, you can provide different git repositories and image registries to be
-used during pipeline execution. Be patient! You will do that in a little bit in
-the next section.
-
-The execution order of tasks is determined by dependencies that are defined between the tasks via inputs and outputs as well as explicit orders that are defined via `runAfter`.
-
-`workspaces` field allows you to specify one or more volumes that each Task in the Pipeline requires during execution. You specify one or more Workspaces in the `workspaces` field.
-
-Create the pipeline by running the following:
-
-```bash
-$ oc create -f https://raw.githubusercontent.com/openshift/pipelines-tutorial/master/01_pipeline/04_pipeline.yaml
+Create the pipeline:
 ```
-
-Alternatively, in the OpenShift Web Console, you can click on the **+** at the top right of the screen while you are in the **pipelines-tutorial** project:
-
-![OpenShift Console - Import Yaml](docs/images/console-import-yaml.png)
-
-Upon creating the pipeline via the web console, you will be taken to a **Pipeline Details** page that gives an overview of the pipeline you created.
-<!-- >
-
-![OpenShift Console - Pipeline Details](docs/images/pipeline-details.png)
-
--->
-
-Check the list of pipelines you have created using the CLI:
+ oc create -f <pipeline-yaml-file-name.yaml>
+```
+Use the tkn pipeline list command to verify that the pipeline is added to the application:
 
 ```
-$ tkn pipeline ls
+ tkn pipeline list
+```
+The output verifies that the build-and-deploy pipeline was created:
 
+```
 NAME               AGE            LAST RUN   STARTED   DURATION   STATUS
 build-and-deploy   1 minute ago   ---        ---       ---        ---
 ```
 
-## Trigger Pipeline
+## 2. Fork a sample repo nodejs-sample to your own github
 
-Now that the pipeline is created, you can trigger it to execute the tasks
-specified in the pipeline.
+For example https://ericbos111/nodejs-sample
 
-> **Note** :-
->
->If you are not into the `pipelines-tutorial` namespace, and using another namespace for the tutorial steps, please make sure you update the
-frontend and backend image resource to the correct url with your namespace name like so :
->
->`image-registry.openshift-image-registry.svc:5000/<namespace-name>/pipelines-vote-api:latest`
+In the git repository, create a folder k8s with 3 files
 
+*	deployment.yaml - copy from vote-ui and edit
+*	route.yaml - copy from vote-ui and edit
+*	service.yaml - copy from vote-ui and edit
 
+otherwise the apply-manifest task will not find the manifests and the update-deployment task will fail. If your pipeline fails in the update-deployment phase, you will need to edit the manifests. Don’t worry about deploy.yaml and devfile.yaml, they are not referenced.
 
-A `PipelineRun` is how you can start a pipeline and tie it to the persistentVolumeClaim and params that should be used for this specific invocation.
- 
-Let's start a pipeline to build and deploy the backend application using `tkn`:
+## 3. Edit Pipeline
 
-```bash
-$ tkn pipeline start build-and-deploy \
-    --prefix-name build-deploy-api-pipelinerun \
-    -w name=shared-workspace,volumeClaimTemplateFile=https://raw.githubusercontent.com/openshift/pipelines-tutorial/master/01_pipeline/03_persistent_volume_claim.yaml \
-    -p deployment-name=pipelines-vote-api \
-    -p git-url=https://github.com/openshift/pipelines-vote-api.git \
-    -p IMAGE=image-registry.openshift-image-registry.svc:5000/pipelines-tutorial/pipelines-vote-api \
-    --use-param-defaults
-
-
-Pipelinerun started: vote-api-t9tpq
-
-In order to track the pipelinerun progress run:
-tkn pipelinerun logs vote-api-t9tpq -f -n pipelines-tutorial
-```
-
-Similarly, start a pipeline to build and deploy the frontend application:
-
-```bash
-$ tkn pipeline start build-and-deploy \
-    --prefix-name build-deploy-ui-pipelinerun \
-    -w name=shared-workspace,volumeClaimTemplateFile=https://raw.githubusercontent.com/openshift/pipelines-tutorial/master/01_pipeline/03_persistent_volume_claim.yaml \
-    -p deployment-name=pipelines-vote-ui \
-    -p git-url=https://github.com/openshift/pipelines-vote-ui.git \
-    -p IMAGE=image-registry.openshift-image-registry.svc:5000/pipelines-tutorial/pipelines-vote-ui \
-    --use-param-defaults
-
-PipelineRun started: vote-ui-9tb2q
-
-In order to track the PipelineRun progress run:
-tkn pipelinerun logs vote-ui-9tb2q -f -n pipelines-tutorial
-```
-As soon as you start the `build-and-deploy` pipeline, a pipelinerun will be instantiated and pods will be created to execute the tasks that are defined in the pipeline.
-
-```bash
-$ tkn pipeline list
-NAME               AGE              LAST RUN        STARTED          DURATION   STATUS
-build-and-deploy   10 minutes ago   vote-ui-9tb2q   47 seconds ago   ---        Running
-```
-
-Above we have started `build-and-deploy` pipeline, with relevant pipeline resources to deploy the backend/frontend applications using single pipeline
-
-```bash
-$ tkn pipelinerun ls
-NAME             STARTED         DURATION   STATUS
-vote-ui-9tb2q    1 minute ago    ---        Running
-vote-api-t9tpq   1 minute ago    ---        Running
-```
-
-
-Check out the logs of the pipelinerun as it runs using the `tkn pipeline logs` command which interactively allows you to pick the pipelinerun of your interest and inspect the logs:
+In Edit pipeline build-and-deploy, in the yaml file, under DOCKERFILE, put
 
 ```
-$ tkn pipeline logs -f
-? Select pipelinerun:  [Use arrows to move, type to filter]
-> vote-ui-9tb2q started 3 minutes ago
-  vote-api-t9tpq started 7 minutes ago
+./Dockerfile
 ```
 
-After a few minutes, the pipeline should finish successfully.
+otherwise the build-image task will not find the Dockerfile.
 
-```bash
-$ tkn pipelinerun list
-NAME             STARTED         DURATION   STATUS
-vote-ui-9tb2q    1 minute ago    1m23s      Succeeded
-vote-api-t9tpq   5 minutes ago   1m31s      Succeeded
-```
+## 4. Start Pipeline
 
-Looking back at the project, you should see that the images are successfully built and deployed.
-
-![Application Deployed](docs/images/application-deployed.png)
-
-You can get the route of the application by executing the following command and access the application
-
-```bash
-$ oc get route pipelines-vote-ui --template='http://{{.spec.host}}'
-```
-
-
-If you want to re-run the pipeline again, you can use the following short-hand command to rerun the last pipelinerun again that uses the same workspaces, params and service account used in the previous pipeline run:
+#### Parameters
 
 ```
-$ tkn pipeline start build-and-deploy --last
+deployment-name  * nodejs-sample
+git-url          * https://ericbos111/nodejs-sample
+git-revision       main                                                                # or whatever branch you want to pull
+IMAGE              image-registry.openshift-image-registry.svc:5000/eric/nodejs-sample # my namespace is 'eric', you will need to use your own.
+Timeouts           60 Min
+Workspaces
+shared-workspace * VolumeClaimTemplate (or existing PersistentVolumeClaim)
 ```
 
-Whenever there is any change to your repository we need to start the pipeline explicitly to see new changes take effect.
+If all tasks succeed but the “Hello from Node.js Starter Application” does not appear in the browser, check if you changed the port to 3001 in the manifests for route and service.
 
-# Triggers
-Triggers in conjunction with pipelines enable us to hook our Pipelines to respond to external GitHub events (push events, pull requests etc).
+If you want to challenge yourself, edit the application to display a different text in the browser.
 
-## Prerequisites
+## 5. Create a webhook
 
-You need an OpenShift 4 cluster running on AWS, Azure or onprem in order to complete this tutorial. If you don't have an existing cluster, go to http://try.openshift.com and register for free in order to get an OpenShift 4 cluster up and running on AWS within minutes.
+If your cluster is publicly accessible, you can create a webhook so that the pipeline is triggered every time you commit a change to your application repository.
 
->***NOTE:*** Running cluster localy [crc](https://github.com/code-ready/crc/releases) won't work, as we need `webhook-url` to be accessable to `github-repos`
-
-### Adding Triggers to our Application:
-
-Now let’s add a TriggerTemplate, TriggerBinding, and an EventListener to our project.
-
-####  Trigger Template
-
-A `TriggerTemplate` is a resource that has parameters that can be substituted anywhere within the resources of a template.
-
-The definition of our TriggerTemplate is given in `03_triggers/02-template.yaml`.
-
-```yaml
-apiVersion: triggers.tekton.dev/v1beta1
-kind: TriggerTemplate
-metadata:
-  name: vote-app
-spec:
-  params:
-  - name: git-repo-url
-    description: The git repository url
-  - name: git-revision
-    description: The git revision
-    default: master
-  - name: git-repo-name
-    description: The name of the deployment to be created / patched
-
-  resourcetemplates:
-  - apiVersion: tekton.dev/v1
-    kind: PipelineRun
-    metadata:
-      generateName: build-deploy-$(tt.params.git-repo-name)-
-    spec:
-      taskRunTemplate:
-        serviceAccountName: pipeline
-      pipelineRef:
-        name: build-and-deploy
-      params:
-      - name: deployment-name
-        value: $(tt.params.git-repo-name)
-      - name: git-url
-        value: $(tt.params.git-repo-url)
-      - name: git-revision
-        value: $(tt.params.git-revision)
-      - name: IMAGE
-        value: image-registry.openshift-image-registry.svc:5000/$(context.pipelineRun.namespace)/$(tt.params.git-repo-name)
-      workspaces:
-      - name: shared-workspace
-        volumeClaimTemplate:
-          spec:
-            accessModes:
-              - ReadWriteOnce
-            resources:
-              requests:
-                storage: 500Mi
-```
-
-Run the following command to apply Triggertemplate.
-
-```bash
-$ oc create -f https://raw.githubusercontent.com/openshift/pipelines-tutorial/master/03_triggers/02_template.yaml
-```
-
-
-####  Trigger Binding
-TriggerBindings is a map enable you to capture fields from an event and store them as parameters, and replace them in triggerTemplate whenever an event occurs.
-
-The definition of our TriggerBinding is given in `03_triggers/01_binding.yaml`.
-
-```yaml
-apiVersion: triggers.tekton.dev/v1beta1
-kind: TriggerBinding
-metadata:
-  name: vote-app
-spec:
-  params:
-  - name: git-repo-url
-    value: $(body.repository.url)
-  - name: git-repo-name
-    value: $(body.repository.name)
-  - name: git-revision
-    value: $(body.head_commit.id)
-```
-The exact paths (keys) of the parameters we need can be found by examining the event payload (eg: GitHub events).
-
-
-Run the following command to apply TriggerBinding.
-
-```bash
-$ oc create -f https://raw.githubusercontent.com/openshift/pipelines-tutorial/master/03_triggers/01_binding.yaml
-```
-
-####  Trigger
-`Trigger` combines TriggerTemplate, TriggerBindings and interceptors. They are used as ref inside the EventListener.
-
-The definition of our Trigger is given in `03_triggers/03_trigger.yaml`.
-
-```yaml
-apiVersion: triggers.tekton.dev/v1beta1
-kind: Trigger
-metadata:
-  name: vote-trigger
-spec:
-  serviceAccountName: pipeline
-  interceptors:
-    - ref:
-        name: "github"
-      params:
-        - name: "secretRef"
-          value:
-            secretName: github-secret
-            secretKey: secretToken
-        - name: "eventTypes"
-          value: ["push"]
-  bindings:
-    - ref: vote-app
-  template:
-    ref: vote-app
-```
-The secret is to verify events are coming from the correct source code management.
-
-```yaml
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: github-secret
-type: Opaque
-stringData:
-  secretToken: "1234567"
-```
-Run the following command to apply Trigger.
-
-```bash
-$ oc create -f https://raw.githubusercontent.com/openshift/pipelines-tutorial/master/03_triggers/03_trigger.yaml
-```
-
-
-#### Event Listener
-
-This component sets up a Service and listens for events. It also connects a TriggerTemplate to a TriggerBinding, into an
-[addressable](https://github.com/knative/eventing/blob/master/docs/spec/interfaces.md)
-endpoint (the event sink)
-
-The definition for our EventListener can be found in
-`03_triggers/04_event_listener.yaml`.
-
-```yaml
-apiVersion: triggers.tekton.dev/v1beta1
-kind: EventListener
-metadata:
-  name: vote-app
-spec:
-  serviceAccountName: pipeline
-  triggers:
-    - triggerRef: vote-trigger
-```
-* Run the following command to create EventListener.
-
-```bash
-$ oc create -f https://raw.githubusercontent.com/openshift/pipelines-tutorial/master/03_triggers/04_event_listener.yaml
-```
-
->***Note***: EventListener will setup a Service. We need to expose that Service as an OpenShift Route to make it publicly accessible.
-
-* Run the below command to expose the EventListener service as a route
-
-```bash
-$ oc expose svc el-vote-app
-```
-
-## Configuring GitHub WebHooks
-
-Now we need to configure webhook-url on [backend](https://github.com/openshift/pipelines-vote-api) and [frontend](https://github.com/openshift/pipelines-vote-ui) source code repositories with the Route we exposed previously.
-
-* Run the below command to get webhook-url
-
-```bash
-$ echo "URL: $(oc  get route el-vote-app --template='http://{{.spec.host}}')"
-```
-
->***Note:***
->
->Fork the [backend](https://github.com/openshift/pipelines-vote-api) and [frontend](https://github.com/openshift/pipelines-vote-ui) source code repositories so that you have sufficient privileges to configure GitHub webhooks.
-
-### Configure webhook manually
-
-Open the forked GitHub repo (Go to Settings > Webhook).
-Click on `Add Webhook` > Add
-```bash
-$ echo "$(oc  get route el-vote-app --template='http://{{.spec.host}}')"
-```
-to payload URL > Select Content type as `application/json` > Add secret eg: `1234567` > Click on `Add Webhook`
-
-![Add webhook](docs/images/add-webhook.png)
-
-- Follow the above procedure to configure the webhook on [frontend](https://github.com/openshift/pipelines-vote-ui) repo
-
-Now we should see a webhook configured on your forked source code repositories (on our
-GitHub Repo, go to Settings>Webhooks).
-
-![Webhook-final](docs/images/webhooks.png)
-
-***Great!, We have configured webhooks***
-
-#### Trigger pipeline Run
-
-When we perform any push event on the [backend](https://github.com/openshift/pipelines-vote-api) the following should happen.
-
-1.  The configured webhook in vote-api GitHub repository should push the event payload to our route (exposed EventListener Service).
-
-2. The Event-Listener will pass the event to the TriggerBinding and TriggerTemplate pair.
-
-3. TriggerBinding will extract parameters needed for rendering the TriggerTemplate.
-Successful rendering of TriggerTemplate should create 2 PipelineResources (source-repo-vote-api and image-source-vote-api) and a PipelineRun (build-deploy-vote-api)
-
-We can test this by pushing a commit to vote-api repository from GitHub web ui or from the terminal.
-
-Let’s push an empty commit to vote-api repository.
-```bash
-$ git commit -m "empty-commit" --allow-empty && git push origin master
-...
-Writing objects: 100% (1/1), 190 bytes | 190.00 KiB/s, done.
-Total 1 (delta 0), reused 0 (delta 0)
-To github.com:<github-username>/pipelines-vote-api.git
-   72c14bb..97d3115  master -> master
-```
-
-Watch the OpenShift WebConsole Developer perspective and a PipelineRun will be automatically created.
-
-![pipeline-run-api](docs/images/pipeline-run-api.png
-)
