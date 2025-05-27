@@ -230,7 +230,7 @@ build-and-deploy   1 minute ago   ---        ---       ---        ---
 
 ## 2. Fork a sample repo nodejs-sample to your own github
 
-For example https://ericbos111/nodejs-sample
+For example https://github.com/ericbos111/nodejs-sample
 
 In the git repository, create a folder k8s with 3 files
 
