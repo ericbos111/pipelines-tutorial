@@ -255,6 +255,10 @@ otherwise the build-image task will not find the Dockerfile. This step is not ne
 
 ## 4. Start Pipeline
 
+Go to your own namespace / project in the UI.
+
+![Screenshot 2025-05-27 at 13 58 41](https://github.com/user-attachments/assets/6a99ddda-1053-4989-ab95-5b5ddb5fd29a)
+
 #### Parameters
 
 ```
@@ -266,7 +270,14 @@ Timeouts           60 Min
 Workspaces
 shared-workspace * VolumeClaimTemplate (or existing PersistentVolumeClaim)
 ```
+In the UI, switch to the Developer View, go to Topology, you will see your application there, and in the top right there's a link to your result.
 
+![Screenshot 2025-05-27 at 14 02 50](https://github.com/user-attachments/assets/720c8be3-0d5a-428d-b11d-0aeab4425afc)
+
+Alternatively, in the CLI, you can get the route and then curl the result.
+```
+oc get route
+```
 If all tasks succeed but the “Hello from Node.js Starter Application” does not appear in the browser, check if you changed the port to 3001 in the manifests for route and service.
 
 If you want to challenge yourself, edit the application to display a different text in the browser.
