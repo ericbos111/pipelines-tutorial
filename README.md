@@ -256,7 +256,7 @@ otherwise the build-image task will not find the Dockerfile.
 
 ```
 deployment-name  * nodejs-sample
-git-url          * https://ericbos111/nodejs-sample
+git-url          * https://github.com/ericbos111/nodejs-sample
 git-revision       main                                                                # or whatever branch you want to pull
 IMAGE              image-registry.openshift-image-registry.svc:5000/eric/nodejs-sample # my namespace is 'eric', you will need to use your own.
 Timeouts           60 Min
