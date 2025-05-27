@@ -88,7 +88,7 @@ OpenShift Pipelines is provided as an add-on on top of OpenShift that can be ins
 
 ![OpenShift OperatorHub](docs/images/operatorhub.png)
 
-* Create your own namespace / project.
+* Create your own namespace / project and change to it, this will be where your pipeline will run.
 ```
 oc new-project eric
 ```
