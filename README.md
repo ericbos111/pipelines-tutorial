@@ -88,7 +88,10 @@ OpenShift Pipelines is provided as an add-on on top of OpenShift that can be ins
 
 ![OpenShift OperatorHub](docs/images/operatorhub.png)
 
-* Create your own namespace.
+* Create your own namespace / project.
+```
+oc new-project eric
+```
 * In order to get familiar with OpenShift Pipelines concepts and create your first pipeline, follow the OpenShift Pipelines Docs but use your own namespace. You can skip the mirroring part.
 
 ### 1.1 Create pipeline tasks 
@@ -248,7 +251,7 @@ In Edit pipeline build-and-deploy, in the yaml file, under DOCKERFILE, put
 ./Dockerfile
 ```
 
-otherwise the build-image task will not find the Dockerfile.
+otherwise the build-image task will not find the Dockerfile. This step is not needed if you used the nodejs-sample repo.
 
 ## 4. Start Pipeline
 
