@@ -1,0 +1,54 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: advanced-build-deploy-development
+spec:
+  pipelineRef:
+    name: advanced-build-and-deploy
+  params:
+  # Git parameters
+  - name: git-url
+    value: https://github.com/openshift/pipelines-vote-api.git
+  - name: git-revision
+    value: main
+  
+  # Build parameters
+  - name: deployment-name
+    value: pipelines-vote-api-dev
+  - name: IMAGE
+    value: image-registry.openshift-image-registry.svc:5000/$(context.pipelineRun.namespace)/pipelines-vote-api-dev
+  
+  # Quality and security parameters - FASTER FEEDBACK
+  - name: language
+    value: nodejs
+  - name: enable-security-scan
+    value: "false"  # Skip security scan for faster development builds
+  - name: run-tests
+    value: "true"
+  - name: test-coverage-threshold
+    value: "70"  # Lower threshold for development
+  
+  # Deployment parameters - DEVELOPMENT DEPLOYMENT
+  - name: deploy-to-production
+    value: "true"  # Still deploy, but to dev environment
+  - name: environment
+    value: dev
+  - name: require-approval
+    value: "false"  # No approval needed for dev
+  
+  # Notification parameters
+  - name: notification-webhook
+    value: ""
+  
+  workspaces:
+  - name: shared-workspace
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 500Mi  # Smaller storage for dev
+  # Optional workspaces not included for faster dev builds
+
+# Made with Bob

@@ -1,0 +1,100 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: code-quality-check
+spec:
+  description: >-
+    This task performs code quality checks including linting and style validation.
+    It can be run in parallel with other validation tasks.
+  workspaces:
+  - name: source
+    description: The workspace containing the source code to analyze
+  params:
+  - name: language
+    description: Programming language of the project (nodejs, python, java, go)
+    type: string
+    default: "nodejs"
+  - name: fail-on-warnings
+    description: Whether to fail the task if warnings are found
+    type: string
+    default: "false"
+  results:
+  - name: quality-score
+    description: Code quality score (0-100)
+  - name: issues-found
+    description: Number of issues found
+  steps:
+  - name: lint-code
+    image: node:18-alpine
+    workingDir: $(workspaces.source.path)
+    script: |
+      #!/bin/sh
+      set -e
+      
+      echo "=========================================="
+      echo "Running Code Quality Checks"
+      echo "Language: $(params.language)"
+      echo "=========================================="
+      
+      # Simulate code quality check based on language
+      case "$(params.language)" in
+        nodejs)
+          echo "Checking for package.json..."
+          if [ -f "package.json" ]; then
+            echo "✓ package.json found"
+            echo "Running ESLint checks (simulated)..."
+            echo "✓ No critical issues found"
+            echo "⚠ 3 warnings found"
+            ISSUES=3
+          else
+            echo "✗ package.json not found"
+            ISSUES=1
+          fi
+          ;;
+        python)
+          echo "Running pylint checks (simulated)..."
+          echo "✓ Code style: PEP8 compliant"
+          ISSUES=0
+          ;;
+        java)
+          echo "Running checkstyle (simulated)..."
+          echo "✓ Code formatting verified"
+          ISSUES=0
+          ;;
+        go)
+          echo "Running golint (simulated)..."
+          echo "✓ Go code formatted correctly"
+          ISSUES=0
+          ;;
+        *)
+          echo "Language $(params.language) not supported, skipping checks"
+          ISSUES=0
+          ;;
+      esac
+      
+      # Calculate quality score (100 - issues*5)
+      SCORE=$((100 - ISSUES * 5))
+      if [ $SCORE -lt 0 ]; then
+        SCORE=0
+      fi
+      
+      echo ""
+      echo "=========================================="
+      echo "Code Quality Results:"
+      echo "  Issues Found: $ISSUES"
+      echo "  Quality Score: $SCORE/100"
+      echo "=========================================="
+      
+      # Write results
+      echo -n "$SCORE" > $(results.quality-score.path)
+      echo -n "$ISSUES" > $(results.issues-found.path)
+      
+      # Fail if warnings found and fail-on-warnings is true
+      if [ "$(params.fail-on-warnings)" = "true" ] && [ $ISSUES -gt 0 ]; then
+        echo "ERROR: Warnings found and fail-on-warnings is enabled"
+        exit 1
+      fi
+      
+      echo "✓ Code quality check completed successfully"
+
+# Made with Bob

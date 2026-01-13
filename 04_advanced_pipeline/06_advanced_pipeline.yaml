@@ -1,0 +1,263 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: advanced-build-and-deploy
+spec:
+  description: >-
+    Advanced pipeline demonstrating parallel task execution, conditional logic,
+    multiple workspaces, and finally tasks for notifications.
+  workspaces:
+  - name: shared-workspace
+    description: Workspace for source code and build artifacts
+  - name: cache-workspace
+    description: Workspace for caching dependencies (optional)
+    optional: true
+  - name: test-results-workspace
+    description: Workspace for storing test results and reports (optional)
+    optional: true
+  params:
+  # Git parameters
+  - name: git-url
+    type: string
+    description: URL of the Git repository
+  - name: git-revision
+    type: string
+    description: Git revision to checkout (branch, tag, or commit SHA)
+    default: "main"
+  
+  # Build parameters
+  - name: IMAGE
+    type: string
+    description: Reference of the image to build
+  - name: deployment-name
+    type: string
+    description: Name of the deployment to be patched
+  
+  # Quality and security parameters
+  - name: language
+    type: string
+    description: Programming language (nodejs, python, java, go)
+    default: "nodejs"
+  - name: enable-security-scan
+    type: string
+    description: Enable security vulnerability scanning (true/false)
+    default: "true"
+  - name: run-tests
+    type: string
+    description: Run automated tests (true/false)
+    default: "true"
+  - name: test-coverage-threshold
+    type: string
+    description: Minimum test coverage percentage (0-100)
+    default: "80"
+  
+  # Deployment parameters
+  - name: deploy-to-production
+    type: string
+    description: Deploy to production environment (true/false)
+    default: "false"
+  - name: environment
+    type: string
+    description: Target environment (dev, staging, production)
+    default: "dev"
+  - name: require-approval
+    type: string
+    description: Require manual approval before deployment (true/false)
+    default: "false"
+  
+  # Notification parameters
+  - name: notification-webhook
+    type: string
+    description: Webhook URL for notifications (optional)
+    default: ""
+
+  tasks:
+  # Task 1: Fetch source code from Git repository
+  - name: fetch-repository
+    taskRef:
+      resolver: cluster
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: git-clone
+      - name: namespace
+        value: openshift-pipelines
+    workspaces:
+    - name: output
+      workspace: shared-workspace
+    params:
+    - name: URL
+      value: $(params.git-url)
+    - name: SUBDIRECTORY
+      value: ""
+    - name: DELETE_EXISTING
+      value: "true"
+    - name: REVISION
+      value: $(params.git-revision)
+
+  # Parallel Tasks: Quality checks, security scan, and tests
+  # These run simultaneously after repository is fetched
+  
+  # Task 2a: Code quality checks (runs in parallel)
+  - name: code-quality-check
+    taskRef:
+      name: code-quality-check
+    workspaces:
+    - name: source
+      workspace: shared-workspace
+    params:
+    - name: language
+      value: $(params.language)
+    - name: fail-on-warnings
+      value: "false"
+    runAfter:
+    - fetch-repository
+
+  # Task 2b: Security scanning (runs in parallel, conditional)
+  - name: security-scan
+    when:
+    - input: "$(params.enable-security-scan)"
+      operator: in
+      values: ["true", "True", "TRUE"]
+    taskRef:
+      name: security-scan
+    workspaces:
+    - name: source
+      workspace: shared-workspace
+    params:
+    - name: scan-type
+      value: "dependencies"
+    - name: severity-threshold
+      value: "high"
+    - name: fail-on-critical
+      value: "false"
+    runAfter:
+    - fetch-repository
+
+  # Task 2c: Run tests (runs in parallel, conditional)
+  - name: run-tests
+    when:
+    - input: "$(params.run-tests)"
+      operator: in
+      values: ["true", "True", "TRUE"]
+    taskRef:
+      name: run-tests
+    workspaces:
+    - name: source
+      workspace: shared-workspace
+    - name: test-results
+      workspace: test-results-workspace
+    params:
+    - name: test-type
+      value: "all"
+    - name: coverage-threshold
+      value: $(params.test-coverage-threshold)
+    - name: test-command
+      value: "npm test"
+    runAfter:
+    - fetch-repository
+
+  # Task 3: Build container image
+  # Runs after all parallel validation tasks complete
+  - name: build-image
+    taskRef:
+      resolver: cluster
+      params:
+      - name: kind
+        value: task
+      - name: name
+        value: buildah
+      - name: namespace
+        value: openshift-pipelines
+    workspaces:
+    - name: source
+      workspace: shared-workspace
+    params:
+    - name: IMAGE
+      value: $(params.IMAGE)
+    runAfter:
+    - code-quality-check
+    - security-scan
+    - run-tests
+
+  # Task 4: Apply Kubernetes manifests
+  # Only runs if deploy-to-production is true
+  - name: apply-manifests
+    when:
+    - input: "$(params.deploy-to-production)"
+      operator: in
+      values: ["true", "True", "TRUE"]
+    taskRef:
+      name: apply-manifests
+    workspaces:
+    - name: source
+      workspace: shared-workspace
+    params:
+    - name: manifest_dir
+      value: "k8s"
+    runAfter:
+    - build-image
+
+  # Task 5: Update deployment with new image
+  # Only runs if deploy-to-production is true
+  - name: update-deployment
+    when:
+    - input: "$(params.deploy-to-production)"
+      operator: in
+      values: ["true", "True", "TRUE"]
+    taskRef:
+      name: update-deployment
+    params:
+    - name: deployment
+      value: $(params.deployment-name)
+    - name: IMAGE
+      value: $(params.IMAGE)
+    runAfter:
+    - apply-manifests
+
+  # Task 6: Conditional deployment with environment validation
+  # Alternative deployment path with more controls
+  - name: conditional-deploy
+    when:
+    - input: "$(params.deploy-to-production)"
+      operator: in
+      values: ["true", "True", "TRUE"]
+    taskRef:
+      name: conditional-deploy
+    workspaces:
+    - name: source
+      workspace: shared-workspace
+    params:
+    - name: deployment-name
+      value: $(params.deployment-name)
+    - name: environment
+      value: $(params.environment)
+    - name: namespace
+      value: $(context.pipelineRun.namespace)
+    - name: require-approval
+      value: $(params.require-approval)
+    - name: manifest-dir
+      value: "k8s"
+    runAfter:
+    - update-deployment
+
+  # Finally tasks: Always run regardless of pipeline success/failure
+  finally:
+  # Send notification about pipeline execution
+  - name: send-notification
+    taskRef:
+      name: send-notification
+    params:
+    - name: pipeline-status
+      value: $(tasks.status)
+    - name: pipeline-name
+      value: advanced-build-and-deploy
+    - name: notification-type
+      value: "console"
+    - name: webhook-url
+      value: $(params.notification-webhook)
+    - name: message
+      value: "Pipeline execution completed for $(params.deployment-name)"
+
+# Made with Bob

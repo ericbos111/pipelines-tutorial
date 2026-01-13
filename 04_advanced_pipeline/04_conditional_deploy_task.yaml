@@ -1,0 +1,168 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: conditional-deploy
+spec:
+  description: >-
+    This task performs conditional deployment based on environment and validation results.
+    It demonstrates how to use task parameters to control deployment behavior.
+  workspaces:
+  - name: source
+    description: The workspace containing the deployment manifests
+  params:
+  - name: deployment-name
+    description: Name of the deployment to create or update
+    type: string
+  - name: environment
+    description: Target environment (dev, staging, production)
+    type: string
+    default: "dev"
+  - name: namespace
+    description: Kubernetes namespace for deployment
+    type: string
+    default: "default"
+  - name: require-approval
+    description: Whether manual approval is required before deployment
+    type: string
+    default: "false"
+  - name: manifest-dir
+    description: Directory containing Kubernetes manifests
+    type: string
+    default: "k8s"
+  results:
+  - name: deployment-status
+    description: Status of the deployment (deployed/skipped/failed)
+  - name: deployed-to
+    description: Environment where the application was deployed
+  steps:
+  - name: validate-environment
+    image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+    workingDir: $(workspaces.source.path)
+    script: |
+      #!/bin/bash
+      set -e
+      
+      echo "=========================================="
+      echo "Conditional Deployment Task"
+      echo "=========================================="
+      echo "Deployment Name: $(params.deployment-name)"
+      echo "Environment: $(params.environment)"
+      echo "Namespace: $(params.namespace)"
+      echo "Require Approval: $(params.require-approval)"
+      echo "=========================================="
+      
+      # Validate environment
+      case "$(params.environment)" in
+        dev|development)
+          echo "✓ Deploying to DEVELOPMENT environment"
+          ENV_VALIDATED="true"
+          ;;
+        staging|stage)
+          echo "✓ Deploying to STAGING environment"
+          ENV_VALIDATED="true"
+          ;;
+        prod|production)
+          echo "⚠ Deploying to PRODUCTION environment"
+          echo "  Production deployments require extra validation"
+          ENV_VALIDATED="true"
+          ;;
+        *)
+          echo "✗ Unknown environment: $(params.environment)"
+          echo "  Valid environments: dev, staging, production"
+          ENV_VALIDATED="false"
+          ;;
+      esac
+      
+      if [ "$ENV_VALIDATED" = "false" ]; then
+        echo "✗ Environment validation failed"
+        echo -n "failed" > $(results.deployment-status.path)
+        echo -n "none" > $(results.deployed-to.path)
+        exit 1
+      fi
+      
+      # Check if approval is required
+      if [ "$(params.require-approval)" = "true" ]; then
+        echo ""
+        echo "⚠ Manual approval required for this deployment"
+        echo "  In a real scenario, this would wait for approval"
+        echo "  For this demo, we'll simulate approval granted"
+        sleep 2
+        echo "✓ Approval granted (simulated)"
+      fi
+      
+      # Check if manifests exist
+      echo ""
+      echo "Checking for deployment manifests..."
+      if [ ! -d "$(params.manifest-dir)" ]; then
+        echo "✗ Manifest directory not found: $(params.manifest-dir)"
+        echo "  Creating example manifests for demo..."
+        mkdir -p $(params.manifest-dir)
+        
+        # Create a simple deployment manifest
+        cat > $(params.manifest-dir)/deployment.yaml << 'ENDMANIFEST'
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: example-app
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: example-app
+        template:
+          metadata:
+            labels:
+              app: example-app
+          spec:
+            containers:
+            - name: example-app
+              image: nginx:latest
+              ports:
+              - containerPort: 8080
+      ENDMANIFEST
+        echo "✓ Example manifest created"
+      else
+        echo "✓ Manifest directory found: $(params.manifest-dir)"
+      fi
+      
+      # List manifests
+      echo ""
+      echo "Deployment manifests:"
+      ls -la $(params.manifest-dir)/ || echo "  No files found"
+      
+      # Apply manifests (dry-run for safety in demo)
+      echo ""
+      echo "Applying manifests to $(params.environment)..."
+      echo "  (Using --dry-run for safety in this demo)"
+      
+      if ls $(params.manifest-dir)/*.yaml >/dev/null 2>&1; then
+        for manifest in $(params.manifest-dir)/*.yaml; do
+          echo "  Processing: $manifest"
+          # In real scenario: oc apply -f $manifest -n $(params.namespace)
+          # For demo, we'll just validate the YAML
+          if command -v oc >/dev/null 2>&1; then
+            oc apply -f $manifest --dry-run=client -n $(params.namespace) || echo "    ⚠ Validation warning (expected in demo)"
+          else
+            echo "    ✓ Would apply in real deployment"
+          fi
+        done
+      else
+        echo "  ⚠ No YAML files found in $(params.manifest-dir)"
+      fi
+      
+      echo ""
+      echo "=========================================="
+      echo "Deployment Summary:"
+      echo "  Status: SUCCESS"
+      echo "  Environment: $(params.environment)"
+      echo "  Namespace: $(params.namespace)"
+      echo "  Deployment: $(params.deployment-name)"
+      echo "=========================================="
+      
+      # Write results
+      echo -n "deployed" > $(results.deployment-status.path)
+      echo -n "$(params.environment)" > $(results.deployed-to.path)
+      
+      echo "✓ Conditional deployment completed successfully"
+
+# Made with Bob

@@ -1,0 +1,165 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: send-notification
+spec:
+  description: >-
+    This task sends notifications about pipeline execution status.
+    It's designed to be used as a finally task that runs regardless of pipeline success or failure.
+  params:
+  - name: pipeline-status
+    description: Status of the pipeline execution (Succeeded/Failed/Unknown)
+    type: string
+    default: "Unknown"
+  - name: pipeline-name
+    description: Name of the pipeline that was executed
+    type: string
+  - name: notification-type
+    description: Type of notification (slack, email, webhook, console)
+    type: string
+    default: "console"
+  - name: webhook-url
+    description: Webhook URL for notifications (optional)
+    type: string
+    default: ""
+  - name: message
+    description: Custom message to include in notification
+    type: string
+    default: ""
+  results:
+  - name: notification-sent
+    description: Whether notification was sent successfully (true/false)
+  steps:
+  - name: send-notification
+    image: curlimages/curl:latest
+    script: |
+      #!/bin/sh
+      set -e
+      
+      echo "=========================================="
+      echo "Sending Pipeline Notification"
+      echo "=========================================="
+      echo "Pipeline: $(params.pipeline-name)"
+      echo "Status: $(params.pipeline-status)"
+      echo "Notification Type: $(params.notification-type)"
+      echo "=========================================="
+      
+      # Determine status emoji and color
+      case "$(params.pipeline-status)" in
+        Succeeded|succeeded|SUCCESS|success)
+          STATUS_EMOJI="✓"
+          STATUS_COLOR="green"
+          STATUS_TEXT="SUCCESS"
+          ;;
+        Failed|failed|FAILED|failure)
+          STATUS_EMOJI="✗"
+          STATUS_COLOR="red"
+          STATUS_TEXT="FAILED"
+          ;;
+        *)
+          STATUS_EMOJI="⚠"
+          STATUS_COLOR="yellow"
+          STATUS_TEXT="UNKNOWN"
+          ;;
+      esac
+      
+      # Build notification message
+      if [ -n "$(params.message)" ]; then
+        NOTIFICATION_MSG="$(params.message)"
+      else
+        NOTIFICATION_MSG="Pipeline '$(params.pipeline-name)' completed with status: $STATUS_TEXT"
+      fi
+      
+      echo ""
+      echo "Notification Message:"
+      echo "  $STATUS_EMOJI $NOTIFICATION_MSG"
+      echo ""
+      
+      # Send notification based on type
+      case "$(params.notification-type)" in
+        slack)
+          echo "Sending Slack notification..."
+          if [ -n "$(params.webhook-url)" ]; then
+            # Simulate Slack webhook call
+            echo "  Webhook URL: $(params.webhook-url)"
+            echo "  Payload: {\"text\": \"$STATUS_EMOJI $NOTIFICATION_MSG\"}"
+            # In real scenario:
+            # curl -X POST -H 'Content-type: application/json' \
+            #   --data "{\"text\":\"$STATUS_EMOJI $NOTIFICATION_MSG\"}" \
+            #   "$(params.webhook-url)"
+            echo "  ✓ Slack notification sent (simulated)"
+            NOTIFICATION_SENT="true"
+          else
+            echo "  ⚠ No webhook URL provided, skipping Slack notification"
+            NOTIFICATION_SENT="false"
+          fi
+          ;;
+          
+        email)
+          echo "Sending email notification..."
+          echo "  To: devops-team@example.com"
+          echo "  Subject: Pipeline $(params.pipeline-name) - $STATUS_TEXT"
+          echo "  Body: $NOTIFICATION_MSG"
+          echo "  ✓ Email notification sent (simulated)"
+          NOTIFICATION_SENT="true"
+          ;;
+          
+        webhook)
+          echo "Sending webhook notification..."
+          if [ -n "$(params.webhook-url)" ]; then
+            echo "  Webhook URL: $(params.webhook-url)"
+            # Simulate webhook call
+            echo "  Payload:"
+            cat << ENDPAYLOAD
+      {
+        "pipeline": "$(params.pipeline-name)",
+        "status": "$STATUS_TEXT",
+        "message": "$NOTIFICATION_MSG",
+        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      }
+      ENDPAYLOAD
+            # In real scenario:
+            # curl -X POST -H 'Content-type: application/json' \
+            #   --data "{\"pipeline\":\"$(params.pipeline-name)\",\"status\":\"$STATUS_TEXT\"}" \
+            #   "$(params.webhook-url)"
+            echo "  ✓ Webhook notification sent (simulated)"
+            NOTIFICATION_SENT="true"
+          else
+            echo "  ⚠ No webhook URL provided, skipping webhook notification"
+            NOTIFICATION_SENT="false"
+          fi
+          ;;
+          
+        console)
+          echo "Console notification (default):"
+          echo ""
+          echo "╔════════════════════════════════════════════════════════╗"
+          echo "║  PIPELINE NOTIFICATION                                 ║"
+          echo "╠════════════════════════════════════════════════════════╣"
+          echo "║  Pipeline: $(params.pipeline-name)"
+          echo "║  Status:   $STATUS_EMOJI $STATUS_TEXT"
+          echo "║  Message:  $NOTIFICATION_MSG"
+          echo "║  Time:     $(date)"
+          echo "╚════════════════════════════════════════════════════════╝"
+          echo ""
+          NOTIFICATION_SENT="true"
+          ;;
+          
+        *)
+          echo "⚠ Unknown notification type: $(params.notification-type)"
+          echo "  Valid types: slack, email, webhook, console"
+          NOTIFICATION_SENT="false"
+          ;;
+      esac
+      
+      echo ""
+      echo "=========================================="
+      echo "Notification Status: $NOTIFICATION_SENT"
+      echo "=========================================="
+      
+      # Write result
+      echo -n "$NOTIFICATION_SENT" > $(results.notification-sent.path)
+      
+      echo "✓ Notification task completed"
+
+# Made with Bob
