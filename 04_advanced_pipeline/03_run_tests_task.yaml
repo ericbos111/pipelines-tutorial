@@ -97,6 +97,13 @@ spec:
       TOTAL_TESTS=$((TESTS_PASSED + TESTS_FAILED))
       
       echo ""
+      # Validate coverage threshold
+      THRESHOLD=$(params.coverage-threshold)
+      if ! [[ "$THRESHOLD" =~ ^[0-9]+$ ]] || [ "$THRESHOLD" -lt 0 ] || [ "$THRESHOLD" -gt 100 ]; then
+        echo "✗ ERROR: Invalid coverage-threshold '$THRESHOLD'. Must be a number between 0-100"
+        exit 1
+      fi
+      
       echo "=========================================="
       echo "Test Results Summary:"
       echo "  Total Tests: $TOTAL_TESTS"
@@ -107,7 +114,7 @@ spec:
       echo "=========================================="
       
       # Save test results to workspace if available
-      if [ -d "$(workspaces.test-results.path)" ]; then
+      if [ "$(workspaces.test-results.bound)" = "true" ]; then
         echo "Saving test results to workspace..."
         cat > $(workspaces.test-results.path)/test-report.txt << 'ENDREPORT'
       Test Execution Report

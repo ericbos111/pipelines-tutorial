@@ -18,6 +18,10 @@ spec:
     description: Whether to fail the task if warnings are found
     type: string
     default: "false"
+  - name: issue-penalty
+    description: Point penalty per issue found in quality score calculation
+    type: string
+    default: "5"
   results:
   - name: quality-score
     description: Code quality score (0-100)
@@ -45,6 +49,7 @@ spec:
             echo "Running ESLint checks (simulated)..."
             echo "✓ No critical issues found"
             echo "⚠ 3 warnings found"
+            # Simulated value for demonstration purposes
             ISSUES=3
           else
             echo "✗ package.json not found"
@@ -72,8 +77,14 @@ spec:
           ;;
       esac
       
-      # Calculate quality score (100 - issues*5)
-      SCORE=$((100 - ISSUES * 5))
+      # Calculate quality score (100 - issues*penalty)
+      PENALTY=$(params.issue-penalty)
+      if ! [[ "$PENALTY" =~ ^[0-9]+$ ]] || [ "$PENALTY" -lt 0 ]; then
+        echo "✗ ERROR: Invalid issue-penalty '$PENALTY'. Must be a positive integer"
+        exit 1
+      fi
+      
+      SCORE=$((100 - ISSUES * PENALTY))
       if [ $SCORE -lt 0 ]; then
         SCORE=0
       fi

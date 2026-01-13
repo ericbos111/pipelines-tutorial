@@ -26,7 +26,7 @@ spec:
     default: "main"
   
   # Build parameters
-  - name: IMAGE
+  - name: image
     type: string
     description: Reference of the image to build
   - name: deployment-name
@@ -160,6 +160,9 @@ spec:
 
   # Task 3: Build container image
   # Runs after all parallel validation tasks complete
+  # Note: security-scan and run-tests are conditional tasks. If they are skipped
+  # due to their when conditions, build-image will still proceed (Tekton treats
+  # skipped tasks as successful for runAfter dependencies)
   - name: build-image
     taskRef:
       resolver: cluster
@@ -175,7 +178,10 @@ spec:
       workspace: shared-workspace
     params:
     - name: IMAGE
-      value: $(params.IMAGE)
+      value: $(params.image)
+    # Note: This task depends on security-scan and run-tests which are conditional.
+    # If those tasks are skipped due to their when expressions, build-image will
+    # still wait for them to complete (as skipped) before executing.
     runAfter:
     - code-quality-check
     - security-scan
@@ -212,7 +218,7 @@ spec:
     - name: deployment
       value: $(params.deployment-name)
     - name: IMAGE
-      value: $(params.IMAGE)
+      value: $(params.image)
     runAfter:
     - apply-manifests
 

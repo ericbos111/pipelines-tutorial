@@ -15,7 +15,7 @@ spec:
   # Build parameters
   - name: deployment-name
     value: pipelines-vote-api-pr
-  - name: IMAGE
+  - name: image
     value: image-registry.openshift-image-registry.svc:5000/$(context.pipelineRun.namespace)/pipelines-vote-api-pr
   
   # Quality and security parameters - ALL CHECKS ENABLED

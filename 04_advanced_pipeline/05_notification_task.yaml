@@ -26,6 +26,10 @@ spec:
     description: Custom message to include in notification
     type: string
     default: ""
+  - name: email-recipients
+    description: Email address(es) to send notifications to (comma-separated for multiple recipients)
+    type: string
+    default: "devops-team@example.com"
   results:
   - name: notification-sent
     description: Whether notification was sent successfully (true/false)
@@ -97,7 +101,7 @@ spec:
           
         email)
           echo "Sending email notification..."
-          echo "  To: devops-team@example.com"
+          echo "  To: $(params.email-recipients)"
           echo "  Subject: Pipeline $(params.pipeline-name) - $STATUS_TEXT"
           echo "  Body: $NOTIFICATION_MSG"
           echo "  ✓ Email notification sent (simulated)"

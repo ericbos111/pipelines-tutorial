@@ -86,7 +86,8 @@ spec:
         echo "⚠ Manual approval required for this deployment"
         echo "  In a real scenario, this would wait for approval"
         echo "  For this demo, we'll simulate approval granted"
-        sleep 2
+        # Sleep kept for demonstration of approval workflow timing
+        sleep 1
         echo "✓ Approval granted (simulated)"
       fi
       
@@ -99,6 +100,7 @@ spec:
         mkdir -p $(params.manifest-dir)
         
         # Create a simple deployment manifest
+        # Note: Single quotes in 'ENDMANIFEST' prevent variable expansion to preserve literal YAML content
         cat > $(params.manifest-dir)/deployment.yaml << 'ENDMANIFEST'
       apiVersion: apps/v1
       kind: Deployment

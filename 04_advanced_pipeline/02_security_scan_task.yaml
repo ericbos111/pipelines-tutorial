@@ -6,6 +6,9 @@ spec:
   description: >-
     This task performs security vulnerability scanning on the source code and dependencies.
     It checks for known vulnerabilities and security issues.
+    
+    NOTE: This task simulates security scanning for demonstration purposes. In production,
+    integrate with actual security tools like Trivy, Snyk, or Aqua.
   workspaces:
   - name: source
     description: The workspace containing the source code to scan

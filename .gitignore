@@ -1,3 +1,12 @@
 .DS_Store
 tmp/
 .vscode/
+
+# Test results and coverage reports
+test-report.txt
+coverage/
+test-results/
+*.log
+*.xml
+*.html
+junit*.xml
